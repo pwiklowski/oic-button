@@ -5,8 +5,10 @@ QT += qml quick
 LIBS += -L../liboic-build -loic
 INCLUDEPATH += ../liboic
 
+CONFIG += c++11
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    OICServer.cpp
 
 RESOURCES += qml.qrc
 
@@ -15,3 +17,6 @@ QML_IMPORT_PATH =
 
 # Default rules for deployment.
 include(deployment.pri)
+
+HEADERS += \
+    OICServer.h
