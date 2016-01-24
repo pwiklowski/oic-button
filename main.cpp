@@ -1,18 +1,9 @@
-#include <QGuiApplication>
-#include <QQmlApplicationEngine>
-#include "OICServer.h"
+#include "application.h"
+#include "QTimer"
+
 
 int main(int argc, char *argv[])
 {
-    QGuiApplication app(argc, argv);
-
-    OICServer* server = new OICServer();
-    server->start();
-
-
-
-    QQmlApplicationEngine engine;
-    engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
-
+    Application app(argc, argv);
     return app.exec();
 }

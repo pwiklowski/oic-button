@@ -8,7 +8,7 @@ INCLUDEPATH += ../liboic
 CONFIG += c++11
 
 SOURCES += main.cpp \
-    OICServer.cpp
+    application.cpp
 
 RESOURCES += qml.qrc
 
@@ -19,4 +19,4 @@ QML_IMPORT_PATH =
 include(deployment.pri)
 
 HEADERS += \
-    OICServer.h
+    application.h
