@@ -5,6 +5,12 @@ QT += qml quick
 LIBS += -L../liboic-build -loic
 INCLUDEPATH += ../liboic
 
+LIBS += -L../libcoap -lcoap
+INCLUDEPATH += ../libcoap
+
+INCLUDEPATH += ../std
+
+
 CONFIG += c++11
 
 SOURCES += main.cpp \
