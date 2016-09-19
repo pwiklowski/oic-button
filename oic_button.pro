@@ -2,7 +2,7 @@ TEMPLATE = app
 
 QT += qml quick
 
-LIBS += -L../liboic-build -loic
+LIBS += -L../liboic -loic
 INCLUDEPATH += ../liboic
 
 LIBS += -L../libcoap -lcoap
