@@ -4,43 +4,52 @@
 #include "QDebug"
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <poll.h>
 
 
+extern uint64_t get_current_ms();
 
 
-
-Application::Application(int argc, char *argv[]) : QGuiApplication(argc, argv)
+Application::Application(int& argc, char *argv[]) : QGuiApplication(argc, argv)
 {
-    server = new OICServer("Button 1", [&](COAPPacket* packet, COAPResponseHandler handler){
-        this->send_packet(packet, handler);
+    server = new OICServer("Button PC","0685B960-736F-46F7-BEC0-9E6CBD61ADC1", [&](COAPPacket* packet){
+        this->send_packet(packet);
     });
 
-    m_value = cbor::map();
-    m_value->append(new cbor("rt"), new cbor("oic.r.switch.binary"));
-    m_value->append(new cbor("value"), new cbor(0));
+    cbor* initial = new cbor(CBOR_TYPE_MAP);
+
+    initial->append("rt", "oic.r.switch.binary");
+    initial->append("value", 1);
 
     OICResource* button = new OICResource("/switch", "oic.r.switch.binary","oic.if.r", [&](cbor* data){
         qDebug() << "Front updated";
-
-
-    }, m_value);
+    }, initial);
 
     server->addResource(button);
     server->start();
 
-
-    pthread_create(&m_thread, NULL, &Application::run, this);
-    pthread_create(&m_discoveryThread, NULL, &Application::runDiscovery, server);
-
-
     engine.rootContext()->setContextProperty("app", this);
     engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
 
+    pthread_create(&m_thread, NULL, &Application::run, this);
+    pthread_create(&m_discoveryThread, NULL, &Application::runDiscovery, this);
 
 }
+
+String Application::convertAddress(sockaddr_in a){
+    char addr[30];
+    sprintf(addr, "%d.%d.%d.%d %d",
+            (uint8_t) (a.sin_addr.s_addr),
+            (uint8_t) (a.sin_addr.s_addr >> 8),
+            (uint8_t) (a.sin_addr.s_addr >> 16 ),
+            (uint8_t) (a.sin_addr.s_addr >> 24),
+            htons(a.sin_port));
+
+    return addr;
+}
+
 void* Application::run(void* param){
     Application* a = (Application*) param;
-
     OICServer* oic_server = a->getServer();
     COAPServer* coap_server = oic_server->getCoapServer();
 
@@ -50,7 +59,6 @@ void* Application::run(void* param){
     a->setSocketFd(fd);
 
     struct sockaddr_in serv,client;
-    struct ip_mreq mreq;
 
     serv.sin_family = AF_INET;
     serv.sin_port = 0;
@@ -68,20 +76,32 @@ void* Application::run(void* param){
         qDebug("Unable to bind");
         return 0;
     }
+    struct pollfd pfd;
+    int res;
 
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    size_t rc;
+    uint64_t lastTick = get_current_ms();
     while(1){
-        size_t rc= recvfrom(fd,buffer,sizeof(buffer),0,(struct sockaddr *)&client,&l);
-        if(rc<0)
+        rc = poll(&pfd, 1, 200); // 1000 ms timeout
+        if(rc > 0)
         {
-            std::cout<<"ERROR READING FROM SOCKET";
+            rc= recvfrom(fd,buffer,sizeof(buffer),0,(struct sockaddr *)&client,&l);
+            COAPPacket* p = COAPPacket::parse(buffer, rc, a->convertAddress(client));
+            coap_server->handleMessage(p);
+            delete p;
         }
-        COAPPacket* p = new COAPPacket(buffer, rc, oic_server->convertAddress(client).c_str());
-        coap_server->handleMessage(p);
+        if ((get_current_ms() - lastTick) > 1000){
+            lastTick = get_current_ms();
+            coap_server->checkPackets();
+        }
     }
 }
 
 void* Application::runDiscovery(void* param){
-    OICServer* oic_server = (OICServer*) param;
+    Application* a = (Application*) param;
+    OICServer* oic_server = a->getServer();
     COAPServer* coap_server = oic_server->getCoapServer();
 
     const int on = 1;
@@ -112,23 +132,23 @@ void* Application::runDiscovery(void* param){
         qDebug() << "Unable to bind";
         return 0;
     }
+    struct pollfd pfd;
+    int res;
 
-
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    size_t rc;
     while(1){
-        qDebug() << "Wait for discovery request";
-        size_t rc= recvfrom(fd,buffer,sizeof(buffer),0,(struct sockaddr *)&client,&l);
-        qDebug() << "discovery thread received packet";
-        if(rc<0)
+        rc = poll(&pfd, 1, 200); // 1000 ms timeout
+        if(rc > 0)
         {
-            std::cout<<"ERROR READING FROM SOCKET";
-            continue;
+            rc= recvfrom(fd,buffer,sizeof(buffer),0,(struct sockaddr *)&client,&l);
+            COAPPacket* p = COAPPacket::parse(buffer, rc, a->convertAddress(client));
+            coap_server->handleMessage(p);
         }
-        COAPPacket* p = new COAPPacket(buffer, rc, oic_server->convertAddress(client));
-
-        coap_server->handleMessage(p);
     }
 }
-void Application::send_packet(COAPPacket* packet, COAPResponseHandler func){
+void Application::send_packet(COAPPacket* packet){
     String destination = packet->getAddress();
     size_t pos = destination.find(" ");
     String ip = destination.substr(0, pos);
@@ -139,38 +159,30 @@ void Application::send_packet(COAPPacket* packet, COAPResponseHandler func){
     client.sin_family = AF_INET;
     client.sin_port = htons(port);
     client.sin_addr.s_addr = inet_addr(ip.c_str());
-    if (!packet->isValidMessageId())
-        packet->setMessageId(server->getMessageId());
 
     qDebug() << "Send packet mid" << packet->getMessageId() << "dest=" << destination.c_str();
-    send_packet(client, packet, func);
+    send_packet(client, packet);
 }
-void Application::send_packet(sockaddr_in destination, COAPPacket* packet, COAPResponseHandler func){
-
-    if (func != nullptr)
-        server->getCoapServer()->addResponseHandler(packet->getMessageId(), func);
-
+void Application::send_packet(sockaddr_in destination, COAPPacket* packet){
     uint8_t buffer[1024];
     size_t response_len;
     socklen_t l = sizeof(destination);
     packet->build(buffer, &response_len);
-
-
+    qDebug() << "size" << response_len;
     sendto(m_socketFd, buffer, response_len, 0, (struct sockaddr*)&destination, l);
 }
 
 
-void Application::notifyObservers(QString name, quint8 value){
+void Application::notifyObservers(QString name, quint8 val){
     qDebug() << "notiftyObservers";
-    delete m_value;
 
-    m_value = cbor::map();
-    m_value->append(new cbor("rt"), new cbor("oic.r.switch.binary"));
-    m_value->append(new cbor("value"), new cbor(value));
+    cbor value(CBOR_TYPE_MAP);
+    value.append("rt", "oic.r.switch.binary");
+    value.append("value", val);
 
     List<uint8_t> data;
 
-    m_value->dump(&data);
-    server->getCoapServer()->notify(name.toLatin1().data(), data);
+    value.dump(&data);
+    server->getCoapServer()->notify(name.toLatin1().data(), &data);
 }
 

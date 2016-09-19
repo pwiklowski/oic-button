@@ -5,12 +5,14 @@
 #include "QGuiApplication"
 #include "OICServer.h"
 #include <QQmlApplicationEngine>
+#include <arpa/inet.h>
+#include <net/if.h>
 
 class Application : public QGuiApplication
 {
     Q_OBJECT
 public:
-    explicit Application(int argc, char *argv[]);
+    explicit Application(int& argc, char *argv[]);
 
     OICServer* getServer(){return server;}
     void setSocketFd(int s) { m_socketFd = s;}
@@ -23,8 +25,9 @@ public slots:
 
 
 private:
-    void send_packet(sockaddr_in destination, COAPPacket* packet, COAPResponseHandler func);
-    void send_packet(COAPPacket* packet, COAPResponseHandler func);
+    String convertAddress(sockaddr_in a);
+    void send_packet(sockaddr_in destination, COAPPacket* packet);
+    void send_packet(COAPPacket* packet);
 
     int m_socketFd;
     cbor* m_value;
