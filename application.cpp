@@ -51,8 +51,6 @@ String Application::convertAddress(sockaddr_in a){
 void* Application::run(void* param){
     Application* a = (Application*) param;
     OICServer* oic_server = a->getServer();
-    COAPServer* coap_server = oic_server->getCoapServer();
-
 
     const int on = 1;
     int fd = socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
@@ -89,12 +87,12 @@ void* Application::run(void* param){
         {
             rc= recvfrom(fd,buffer,sizeof(buffer),0,(struct sockaddr *)&client,&l);
             COAPPacket* p = COAPPacket::parse(buffer, rc, a->convertAddress(client));
-            coap_server->handleMessage(p);
+            oic_server->handleMessage(p);
             delete p;
         }
         if ((get_current_ms() - lastTick) > 1000){
             lastTick = get_current_ms();
-            coap_server->checkPackets();
+            oic_server->checkPackets();
         }
     }
 }
@@ -102,7 +100,6 @@ void* Application::run(void* param){
 void* Application::runDiscovery(void* param){
     Application* a = (Application*) param;
     OICServer* oic_server = a->getServer();
-    COAPServer* coap_server = oic_server->getCoapServer();
 
     const int on = 1;
 
@@ -144,7 +141,7 @@ void* Application::runDiscovery(void* param){
         {
             rc= recvfrom(fd,buffer,sizeof(buffer),0,(struct sockaddr *)&client,&l);
             COAPPacket* p = COAPPacket::parse(buffer, rc, a->convertAddress(client));
-            coap_server->handleMessage(p);
+            oic_server->handleMessage(p);
         }
     }
 }
@@ -183,6 +180,6 @@ void Application::notifyObservers(QString name, quint8 val){
     List<uint8_t> data;
 
     value.dump(&data);
-    server->getCoapServer()->notify(name.toLatin1().data(), &data);
+    server->notify(name.toLatin1().data(), &data);
 }
 
